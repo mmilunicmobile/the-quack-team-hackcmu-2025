@@ -11,7 +11,7 @@ app = FastAPI()
 
 @app.get("/")
 async def read_root():
-    return JSONResponse(content={"message": "Welcome to your FastAPI server!"})
+    return JSONResponse(content={"message": "Welcome to the Lock In O'Clock backend!"})
 
 # Endpoint to get a new session code
 @app.get("/session-code")
@@ -113,7 +113,7 @@ async def websocket_session(websocket: WebSocket, session_code: str):
         session_manager.disconnect(session_code, websocket)
 
 def main():
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 
 if __name__ == "__main__":
     main()
