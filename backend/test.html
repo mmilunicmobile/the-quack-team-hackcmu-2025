@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Session WebSocket Test</title>
+</head>
+<body>
+    <h1>Session WebSocket Client</h1>
+    <label>Session Code: <input type="text" id="sessionCode" value="ABC12"></label>
+    <button onclick="connectWS()">Connect</button>
+    <hr>
+    <div>
+        <h2>Quick Actions</h2>
+        <div class="action-group">
+            <h3>Timer Controls</h3>
+            <label>Timer Value (seconds): <input type="number" id="timerValue" value="1800" min="1"></label>
+            <button onclick="sendAction('set_timer')">Set Timer</button>
+            <button onclick="sendAction('start_timer')">Start Timer</button>
+            <button onclick="sendAction('stop_timer')">Stop Timer</button>
+        </div>
+        <div class="action-group">
+            <h3>User Data</h3>
+            <label>Score: <input type="number" id="scoreValue" value="0" min="0"></label>
+            <button onclick="sendAction('set_score')">Set Score</button><br>
+            <label>Username: <input type="text" id="usernameValue" value="Player1"></label>
+            <button onclick="sendAction('set_username')">Set Username</button><br>
+            <label>Profile: <input type="text" id="profileValue" value="default"></label>
+            <button onclick="sendAction('set_profile')">Set Profile</button>
+        </div>
+    </div>
+    <hr>
+    <div>
+        <h2>Send Raw JSON</h2>
+        <textarea id="jsonText" rows="6" cols="50">{"type": "set_score", "value": 0}</textarea>
+        <br>
+        <button onclick="sendJson()">Send Raw JSON</button>
+    </div>
+    <hr>
+    <div>
+        <h2>Received Data</h2>
+        <pre id="received"></pre>
+    </div>
+    <script>
+        let ws;
+        function connectWS() {
+            const code = document.getElementById('sessionCode').value;
+            ws = new WebSocket(`ws://127.0.0.1:8000/ws/${code}`);
+            ws.onopen = () => {
+                document.getElementById('received').textContent += 'Connected\n';
+            };
+            ws.onmessage = (event) => {
+                document.getElementById('received').textContent += event.data + '\n';
+            };
+            ws.onclose = () => {
+                document.getElementById('received').textContent += 'Disconnected\n';
+            };
+        }
+        
+        function sendAction(type) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                let value;
+                switch (type) {
+                    case 'set_timer':
+                        value = parseInt(document.getElementById('timerValue').value);
+                        break;
+                    case 'set_score':
+                        value = parseInt(document.getElementById('scoreValue').value);
+                        break;
+                    case 'set_username':
+                        value = document.getElementById('usernameValue').value;
+                        break;
+                    case 'set_profile':
+                        value = document.getElementById('profileValue').value;
+                        break;
+                    default:
+                        value = null;
+                }
+                
+                const data = { type: type };
+                if (value !== null) {
+                    data.value = value;
+                }
+                
+                ws.send(JSON.stringify(data));
+                document.getElementById('received').textContent += `Sent: ${JSON.stringify(data)}\n`;
+            }
+        }
+        
+        function sendJson() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const jsonText = document.getElementById('jsonText').value;
+                ws.send(jsonText);
+                document.getElementById('received').textContent += `Sent raw: ${jsonText}\n`;
+            }
+        }
+    </script>
+</body>
+</html>
