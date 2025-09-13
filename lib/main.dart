@@ -31,22 +31,22 @@ class FocusHomePage extends StatefulWidget {
 
 class _FocusHomePageState extends State<FocusHomePage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  // --- User & focus state
   String username = "User";
-  double focusPercentage = 100.0; // starts at 100%
+  double focusPercentage = 100.0;
 
-  // --- Timer state
-  int remainingSeconds = 300; // default 5:00
+  int remainingSeconds = 300;
   bool isTimerRunning = false;
-  Timer? _uiTimer; // updates the UI every second
+  Timer? _uiTimer;
   DateTime? targetEndTime;
 
-  // --- App background tracking
   DateTime? _backgroundTime;
   int _consecutiveActiveSeconds = 0;
 
-  // --- Shimmer animation for focus bar
   late AnimationController _shimmerController;
+
+  // Mock opponent (later will be updated via WebSockets)
+  String opponentName = "Opponent1";
+  double opponentScore = 87.0;
 
   @override
   void initState() {
@@ -66,11 +66,9 @@ class _FocusHomePageState extends State<FocusHomePage>
     super.dispose();
   }
 
-  // --- App lifecycle handling
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!isTimerRunning) return;
-
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
@@ -80,12 +78,15 @@ class _FocusHomePageState extends State<FocusHomePage>
         break;
       case AppLifecycleState.resumed:
         if (_backgroundTime != null) {
-          final awaySeconds = DateTime.now().difference(_backgroundTime!).inSeconds;
+          final awaySeconds =
+              DateTime.now().difference(_backgroundTime!).inSeconds;
           if (awaySeconds > 0) {
             setState(() {
-              focusPercentage = (focusPercentage - awaySeconds * 0.2).clamp(0.0, 100.0);
+              focusPercentage =
+                  (focusPercentage - awaySeconds * 0.2).clamp(0.0, 100.0);
               if (targetEndTime != null) {
-                remainingSeconds = max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
+                remainingSeconds =
+                    max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
                 if (remainingSeconds == 0) isTimerRunning = false;
               }
             });
@@ -100,7 +101,6 @@ class _FocusHomePageState extends State<FocusHomePage>
     }
   }
 
-  // --- Timer management using targetEndTime
   void _startTimer() {
     if (isTimerRunning) return;
     setState(() {
@@ -116,13 +116,13 @@ class _FocusHomePageState extends State<FocusHomePage>
 
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (targetEndTime == null) return;
+      final newRemaining =
+          max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
 
-      final newRemaining = max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
       setState(() {
         remainingSeconds = newRemaining;
-
-        // On-app recovery
         _consecutiveActiveSeconds++;
+
         if (_consecutiveActiveSeconds >= 5) {
           focusPercentage = (focusPercentage + 0.05).clamp(0.0, 100.0);
           _consecutiveActiveSeconds = 0;
@@ -139,7 +139,8 @@ class _FocusHomePageState extends State<FocusHomePage>
   void _pauseTimer() {
     _uiTimer?.cancel();
     if (targetEndTime != null) {
-      remainingSeconds = max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
+      remainingSeconds =
+          max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
     }
     setState(() {
       isTimerRunning = false;
@@ -154,14 +155,15 @@ class _FocusHomePageState extends State<FocusHomePage>
     }
   }
 
-  // --- Set timer dialog
   Future<void> _showSetTimeDialog() async {
     if (isTimerRunning) return;
 
-    final minutesController = TextEditingController(text: (remainingSeconds ~/ 60).toString());
-    final secondsController = TextEditingController(text: (remainingSeconds % 60).toString());
+    final minutesController =
+        TextEditingController(text: (remainingSeconds ~/ 60).toString());
+    final secondsController =
+        TextEditingController(text: (remainingSeconds % 60).toString());
 
-    final result = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Set Timer (mm:ss)'),
@@ -185,7 +187,9 @@ class _FocusHomePageState extends State<FocusHomePage>
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
               final m = int.tryParse(minutesController.text) ?? 0;
@@ -202,7 +206,6 @@ class _FocusHomePageState extends State<FocusHomePage>
     );
   }
 
-  // --- Edit username
   Future<void> _editUsername() async {
     final controller = TextEditingController(text: username);
     final result = await showDialog<String?>(
@@ -214,8 +217,12 @@ class _FocusHomePageState extends State<FocusHomePage>
           decoration: const InputDecoration(labelText: 'Name'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Save')),
         ],
       ),
     );
@@ -227,15 +234,61 @@ class _FocusHomePageState extends State<FocusHomePage>
     }
   }
 
+  void _showCodeDialog() {
+    final codeController = TextEditingController();
+    final randomCode = _generateRandomString();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Code Generator / Input'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Random Code: $randomCode',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: codeController,
+              decoration: const InputDecoration(
+                labelText: 'Enter a code',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              final enteredCode = codeController.text.trim();
+              print('User entered code: $enteredCode');
+              Navigator.pop(context);
+            },
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _generateRandomString() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rand = Random();
+    return List.generate(6, (_) => chars[rand.nextInt(chars.length)]).join();
+  }
+
   String _formatTime(int seconds) {
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  // --- Focus bar
   Widget _focusBar() {
-    final targetColor = Color.lerp(Colors.red, Colors.green, focusPercentage / 100)!;
+    final targetColor =
+        Color.lerp(Colors.red, Colors.green, focusPercentage / 100)!;
 
     return Container(
       width: 280,
@@ -267,7 +320,8 @@ class _FocusHomePageState extends State<FocusHomePage>
                           Colors.white.withOpacity(0.25),
                         ],
                         stops: const [0.0, 0.5, 1.0],
-                        begin: Alignment(-1.0 + _shimmerController.value * 2, 0),
+                        begin:
+                            Alignment(-1.0 + _shimmerController.value * 2, 0),
                         end: Alignment(1.0 - _shimmerController.value * 2, 0),
                       ).createShader(rect);
                     },
@@ -315,88 +369,78 @@ class _FocusHomePageState extends State<FocusHomePage>
     );
   }
 
-  // --- Lightning button dialog: generate and input code
-  void _showCodeDialog() {
-    final codeController = TextEditingController();
-    final randomCode = _generateRandomString();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Code Generator / Input'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Random Code: $randomCode', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: codeController,
-              decoration: const InputDecoration(
-                labelText: 'Enter a code',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              final enteredCode = codeController.text.trim();
-              print('User entered code: $enteredCode'); // handle as needed
-              Navigator.pop(context);
-            },
-            child: const Text('Submit'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _generateRandomString() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final rand = Random();
-    return List.generate(6, (_) => chars[rand.nextInt(chars.length)]).join();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          children: [
-            GestureDetector(
-              onTap: _editUsername,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                alignment: Alignment.center,
-                child: Text(
-                  username,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black54),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: _editUsername,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      )
+                    ],
+                  ),
+                  child: Text(
+                    username,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            const Spacer(),
-            Text(
-              'Focus: ${focusPercentage.toStringAsFixed(2)}%',
-              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.black87),
-            ),
-            const SizedBox(height: 12),
-            _focusBar(),
-            const SizedBox(height: 30),
-            GestureDetector(
-              onTap: _showSetTimeDialog,
-              child: Text(
-                _formatTime(remainingSeconds),
-                style: const TextStyle(fontSize: 56, fontWeight: FontWeight.bold, color: Colors.black),
+              const SizedBox(height: 12),
+              Text(
+                'Focus: ${focusPercentage.toStringAsFixed(2)}%',
+                style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87),
               ),
-            ),
-            const SizedBox(height: 24),
-            _playPauseButton(),
-            const Spacer(),
-          ],
+              const SizedBox(height: 12),
+              _focusBar(),
+              const SizedBox(height: 6),
+
+              // ✅ Opponent display
+              Text(
+                'Opponent: $opponentName | Score: ${opponentScore.toStringAsFixed(2)}%',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.black54,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+
+              const SizedBox(height: 30),
+              GestureDetector(
+                onTap: _showSetTimeDialog,
+                child: Text(
+                  _formatTime(remainingSeconds),
+                  style: const TextStyle(
+                      fontSize: 56,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black),
+                ),
+              ),
+              const SizedBox(height: 24),
+              _playPauseButton(),
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton(
