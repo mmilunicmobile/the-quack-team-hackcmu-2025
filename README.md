@@ -1,16 +1,12 @@
-# locked_in
+# Locked In
+<p align="center">
+<img src="locked_in.png"></img>
+</p>
 
-A new Flutter project.
+Challenge your friends with a friendly competition to see who is **locked in**, and who is **locked out**.
 
-## Getting Started
+Sync up your phones for a study session,
+maintain your focus score by staying locked in, and in the end see who could stay focused the most.
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Tech Stack
+The frontend is written in Dart using Flutter and the backend is written in Python using FastAPI. The connection between devices is done by connecting through the backend.
