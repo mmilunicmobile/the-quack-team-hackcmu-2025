@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Session Viewer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        h1 { color: #333; }
+        .session { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; border-radius: 8px; }
+        .users { margin-left: 1em; }
+        .user { margin-bottom: 0.5em; }
+    </style>
+</head>
+<body>
+    <h1>Open Sessions</h1>
+    <div id="sessions"></div>
+    <script>
+        async function fetchSessions() {
+            const res = await fetch('/sessions');
+            const data = await res.json();
+            const container = document.getElementById('sessions');
+            container.innerHTML = '';
+            const sessions = data.sessions;
+            if (Object.keys(sessions).length === 0) {
+                container.innerHTML = '<p>No open sessions.</p>';
+                return;
+            }
+            for (const [code, session] of Object.entries(sessions)) {
+                const div = document.createElement('div');
+                div.className = 'session';
+                div.innerHTML = `<strong>Session Code:</strong> ${code}<br>
+                    <strong>Timer Running:</strong> ${session.timer_running}<br>
+                    <strong>Timer Amount:</strong> ${session.timer_amount}<br>
+                    <strong>Timer End Time:</strong> ${session.timer_end_time}<br>
+                    <strong>Users:</strong><div class="users"></div>`;
+                const usersDiv = div.querySelector('.users');
+                session.users.forEach((user, idx) => {
+                    const userDiv = document.createElement('div');
+                    userDiv.className = 'user';
+                    userDiv.innerHTML = `#${idx+1} <strong>${user.username || '(unnamed)'}</strong> | Score: ${user.score} | Profile: ${user.profile}`;
+                    usersDiv.appendChild(userDiv);
+                });
+                container.appendChild(div);
+            }
+        }
+        fetchSessions();
+        setInterval(fetchSessions, 2000);
+    </script>
+</body>
+</html>

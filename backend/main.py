@@ -1,13 +1,36 @@
 
 from unittest import case
-from fastapi import FastAPI, WebSocketDisconnect, WebSocket
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, WebSocketDisconnect, WebSocket, Request
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import random
 import string
 import time
 
+
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Endpoint to get all session states
+@app.get("/sessions")
+async def get_sessions():
+    sessions = {}
+    for code, session in session_manager.active_sessions.items():
+        sessions[code] = {
+            "timer_end_time": session.timer_end_time,
+            "timer_amount": session.timer_amount,
+            "timer_running": session.timer_running,
+            "users": [
+                {
+                    "username": user.username,
+                    "score": user.score,
+                    "profile": user.profile
+                }
+                for user in session.websockets.values()
+            ]
+        }
+    return JSONResponse(content={"sessions": sessions})
 
 @app.get("/")
 async def read_root():
