@@ -84,7 +84,6 @@ class _FocusHomePageState extends State<FocusHomePage>
           if (awaySeconds > 0) {
             setState(() {
               focusPercentage = (focusPercentage - awaySeconds * 0.2).clamp(0.0, 100.0);
-              // Update remainingSeconds correctly using targetEndTime
               if (targetEndTime != null) {
                 remainingSeconds = max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
                 if (remainingSeconds == 0) isTimerRunning = false;
@@ -140,7 +139,6 @@ class _FocusHomePageState extends State<FocusHomePage>
   void _pauseTimer() {
     _uiTimer?.cancel();
     if (targetEndTime != null) {
-      // recalc remainingSeconds
       remainingSeconds = max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
     }
     setState(() {
@@ -317,31 +315,48 @@ class _FocusHomePageState extends State<FocusHomePage>
     );
   }
 
-  // --- Lightning button random code
-  String _generateRandomString() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final rand = Random();
-    return List.generate(6, (_) => chars[rand.nextInt(chars.length)]).join();
-  }
+  // --- Lightning button dialog: generate and input code
+  void _showCodeDialog() {
+    final codeController = TextEditingController();
+    final randomCode = _generateRandomString();
 
-  void _showRandomString() {
-    final code = _generateRandomString();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Your Random Code'),
-        content: Text(
-          code,
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        title: const Text('Code Generator / Input'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Random Code: $randomCode', style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: codeController,
+              decoration: const InputDecoration(
+                labelText: 'Enter a code',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              final enteredCode = codeController.text.trim();
+              print('User entered code: $enteredCode'); // handle as needed
+              Navigator.pop(context);
+            },
+            child: const Text('Submit'),
           ),
         ],
       ),
     );
+  }
+
+  String _generateRandomString() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final rand = Random();
+    return List.generate(6, (_) => chars[rand.nextInt(chars.length)]).join();
   }
 
   @override
@@ -385,7 +400,7 @@ class _FocusHomePageState extends State<FocusHomePage>
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _showRandomString,
+        onPressed: _showCodeDialog,
         backgroundColor: Colors.yellow.shade700,
         child: const Icon(Icons.flash_on, color: Colors.white, size: 32),
       ),
