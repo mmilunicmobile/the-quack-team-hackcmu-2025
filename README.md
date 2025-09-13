@@ -10,3 +10,6 @@ maintain your focus score by staying locked in, and in the end see who could sta
 
 ## Tech Stack
 The frontend is written in Dart using Flutter and the backend is written in Python using FastAPI. The connection between devices is done by connecting through the backend.
+
+## Credits
+Created by Matthew Milunic, Sudhir Chebiyyam, Saanvi Wadhwa, Asiya Kadivar for HackCMU 2025 hosted by ACM@CMU.
