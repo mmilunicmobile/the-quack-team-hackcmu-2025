@@ -86,7 +86,10 @@ class SessionManager:
     async def broadcast(self, session_code: str, message: dict):
         if session_code in self.active_sessions:
             for i, ws in enumerate(self.active_sessions[session_code].websockets):
-                await ws.send_json({**message, "owner": i == 0, "user_index": i})
+                await ws.send_json({**message, "owner": i == 0, 
+                                    "scores": message["scores"][:i] + message["scores"][i+1:],
+                                    "profiles": message["profiles"][:i] + message["profiles"][i+1:],
+                                    "usernames": message["usernames"][:i] + message["usernames"][i+1:]})
 
 
 session_manager = SessionManager()

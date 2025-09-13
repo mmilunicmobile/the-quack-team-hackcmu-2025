@@ -94,6 +94,44 @@ class _FocusHomePageState extends State<FocusHomePage>
       });
       print('WebSocketChannel connected to: $hostname/ws/$code');
       
+      // Set up listener for incoming messages from the server
+      channel.stream.listen(
+        (message) {
+          try {
+            final data = jsonDecode(message.toString());
+            print('Received from WebSocket: $data');
+            
+            // Handle incoming data (scores, usernames, timer info)
+            // API now excludes the current user from arrays
+            
+            // Update opponent name if usernames are available
+            if (data['usernames'] != null && data['usernames'].isNotEmpty && data['usernames'][0] != null) {
+              setState(() {
+                // First entry in the array is now the opponent (current user is excluded)
+                opponentName = data['usernames'][0];
+              });
+            }
+            
+            // Update opponent score if scores are available
+            if (data['scores'] != null && data['scores'].isNotEmpty) {
+              setState(() {
+                // First entry in the array is now the opponent's score (current user is excluded)
+                opponentScore = data['scores'][0].toDouble();
+              });
+            }
+            
+          } catch (e) {
+            print('Error processing WebSocket message: $e');
+          }
+        },
+        onDone: () {
+          print('WebSocket connection closed');
+        },
+        onError: (error) {
+          print('WebSocket error: $error');
+        },
+      );
+      
       // Send username immediately after connection is established
       Future.delayed(const Duration(milliseconds: 500), () {
         sendJsonToWebSocket({
@@ -101,6 +139,13 @@ class _FocusHomePageState extends State<FocusHomePage>
           'value': username
         });
         print('Initial username sent: $username');
+        
+        // Also send initial focus score
+        sendJsonToWebSocket({
+          'type': 'set_score',
+          'value': focusPercentage
+        });
+        print('Initial focus score sent: $focusPercentage');
       });
     } catch (e) {
       print('WebSocketChannel connection failed: $e');
@@ -131,6 +176,8 @@ class _FocusHomePageState extends State<FocusHomePage>
           final awaySeconds =
               DateTime.now().difference(_backgroundTime!).inSeconds;
           if (awaySeconds > 0) {
+            double oldFocusPercentage = focusPercentage;
+            
             setState(() {
               focusPercentage =
                   (focusPercentage - awaySeconds * 0.2).clamp(0.0, 100.0);
@@ -140,6 +187,15 @@ class _FocusHomePageState extends State<FocusHomePage>
                 if (remainingSeconds == 0) isTimerRunning = false;
               }
             });
+            
+            // If focus percentage changed due to being away, update the backend
+            if (oldFocusPercentage != focusPercentage) {
+              sendJsonToWebSocket({
+                'type': 'set_score',
+                'value': focusPercentage
+              });
+              print('Focus score updated after resuming: $focusPercentage');
+            }
           }
         }
         _backgroundTime = null;
@@ -157,6 +213,13 @@ class _FocusHomePageState extends State<FocusHomePage>
       isTimerRunning = true;
       targetEndTime = DateTime.now().add(Duration(seconds: remainingSeconds));
     });
+    
+    // Send start timer message to backend
+    sendJsonToWebSocket({
+      'type': 'start_timer'
+    });
+    print('Timer start sent to backend');
+    
     _startUITimer();
   }
 
@@ -174,7 +237,18 @@ class _FocusHomePageState extends State<FocusHomePage>
         _consecutiveActiveSeconds++;
 
         if (_consecutiveActiveSeconds >= 5) {
+          double oldFocusPercentage = focusPercentage;
           focusPercentage = (focusPercentage + 0.05).clamp(0.0, 100.0);
+          
+          // If focus percentage changed, send update to backend
+          if (oldFocusPercentage != focusPercentage) {
+            sendJsonToWebSocket({
+              'type': 'set_score',
+              'value': focusPercentage
+            });
+            print('Focus score updated to: $focusPercentage');
+          }
+          
           _consecutiveActiveSeconds = 0;
         }
 
@@ -195,6 +269,12 @@ class _FocusHomePageState extends State<FocusHomePage>
     setState(() {
       isTimerRunning = false;
     });
+    
+    // Send stop timer message to backend
+    sendJsonToWebSocket({
+      'type': 'stop_timer'
+    });
+    print('Timer stop sent to backend');
   }
 
   void _togglePlayPause() {
@@ -244,9 +324,19 @@ class _FocusHomePageState extends State<FocusHomePage>
             onPressed: () {
               final m = int.tryParse(minutesController.text) ?? 0;
               final s = int.tryParse(secondsController.text) ?? 0;
+              final newSeconds = m * 60 + s;
+              
               setState(() {
-                remainingSeconds = m * 60 + s;
+                remainingSeconds = newSeconds;
               });
+              
+              // Send timer update to backend
+              sendJsonToWebSocket({
+                'type': 'set_timer',
+                'value': newSeconds
+              });
+              print('Timer set to $newSeconds seconds, sent to backend');
+              
               Navigator.pop(context, true);
             },
             child: const Text('Set'),
