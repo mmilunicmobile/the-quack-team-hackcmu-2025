@@ -134,6 +134,7 @@ async def websocket_session(websocket: WebSocket, session_code: str):
                 "scores": [user_state.score for user_state in users_websockets],
                 "profiles": [user_state.profile for user_state in users_websockets],
                 "usernames": [user_state.username for user_state in users_websockets],
+                "last_ping_times": [user_state.last_ping_time for user_state in users_websockets],
                 "time_remaining": active_session.timer_amount,
                 "timer_running": active_session.timer_running,
                 "timer_end_time": active_session.timer_end_time
