@@ -303,6 +303,12 @@ class _FocusHomePageState extends State<FocusHomePage>
       if (isTimerRunning) {
         newRemaining =
             max(0.0, targetEndTime!.difference(DateTime.now()).inMilliseconds / 1000.0);
+            
+        // Check if the timer just reached zero
+        if (newRemaining <= 0.1 && visualTimerDisplayTime > 0.1) {
+          // Timer just ended, show winner popup
+          _showWinnerDialog();
+        }
       } else {
         newRemaining = remainingSeconds;
       }
@@ -334,6 +340,72 @@ class _FocusHomePageState extends State<FocusHomePage>
         }
       });
     });
+  }
+  
+  // Show a dialog announcing the winner when the timer hits zero
+  void _showWinnerDialog() {
+    // Determine the winner based on focus scores
+    final bool userWon = focusPercentage > opponentScore;
+    final bool tie = (focusPercentage - opponentScore).abs() < 0.01;
+    
+    final String winnerName = userWon ? username : opponentName;
+    final String resultMessage = tie 
+        ? "It's a tie!" 
+        : "$winnerName wins!";
+    final String scoreMessage = "Final scores:\n$username: ${focusPercentage.toStringAsFixed(2)}%\n$opponentName: ${opponentScore.toStringAsFixed(2)}%";
+    
+    // Show the dialog only if not already showing another dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false, // User must tap a button to close the dialog
+      builder: (context) => AlertDialog(
+        title: Text(
+          resultMessage,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: tie ? Colors.blue : (userWon ? Colors.green : Colors.red),
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Text(
+              scoreMessage,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 18),
+            ),
+            const SizedBox(height: 20),
+            Icon(
+              tie ? Icons.handshake : (userWon ? Icons.emoji_events : Icons.mood),
+              size: 60,
+              color: tie ? Colors.blue : (userWon ? Colors.amber : Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // Reset the timer for a new session if needed
+              sendJsonToWebSocket({
+                'type': 'set_timer',
+                'value': 20 * 60 // Reset to 20 minutes
+              });
+            },
+            child: const Text('New Session'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _pauseTimer() {
@@ -570,6 +642,56 @@ class _FocusHomePageState extends State<FocusHomePage>
       ),
     );
   }
+  
+  Widget _opponentFocusBar() {
+    return Container(
+      width: 280,
+      height: 16, // Slightly smaller than the user's bar
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.black26, width: 1.0),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: Stack(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut,
+              width: 280 * (opponentScore / 100),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade500, // Gray color for opponent bar
+              ),
+            ),
+            AnimatedBuilder(
+              animation: _shimmerController,
+              builder: (context, _) {
+                return Positioned.fill(
+                  child: ShaderMask(
+                    shaderCallback: (rect) {
+                      return LinearGradient(
+                        colors: [
+                          Colors.white.withOpacity(0.2),
+                          Colors.transparent,
+                          Colors.white.withOpacity(0.2),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                        begin:
+                            Alignment(-1.0 + _shimmerController.value * 2, 0),
+                        end: Alignment(1.0 - _shimmerController.value * 2, 0),
+                      ).createShader(rect);
+                    },
+                    blendMode: BlendMode.srcOver,
+                    child: Container(color: Colors.transparent),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _playPauseButton() {
     return GestureDetector(
@@ -659,8 +781,10 @@ class _FocusHomePageState extends State<FocusHomePage>
                   fontWeight: FontWeight.w500,
                 ),
               ),
+              const SizedBox(height: 4),
+              _opponentFocusBar(), // Added opponent focus bar
 
-              const SizedBox(height: 30),
+              const SizedBox(height: 26),
               GestureDetector(
                 onTap: _showSetTimeDialog,
                 child: Text(
