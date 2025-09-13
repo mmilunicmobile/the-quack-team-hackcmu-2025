@@ -61,7 +61,7 @@ class UserState:
 class SessionItem:
     def __init__(self):
         self.timer_end_time: int = 0      # seconds
-        self.timer_amount: int = 0     # seconds
+        self.timer_amount: int = 20 * 60   # seconds
         self.timer_running: bool = False # is the timer running
         self.websockets: Dict[WebSocket, UserState] = {} # connected websockets for this session
 

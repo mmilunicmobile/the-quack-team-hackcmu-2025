@@ -50,18 +50,19 @@ class _FocusHomePageState extends State<FocusHomePage>
     }
   }
   WebSocketChannel? _webSocketChannel;
-  String username = "User";
+  String username = "Scotty";
   double focusPercentage = 100.0;
-  int remainingSeconds = 300;
+  int remainingSeconds = 20 * 60; // Default 20 minutes
   bool isTimerRunning = false;
   Timer? _uiTimer;
+  Timer? _backgroundPenaltyTimer;  // For background penalty updates
   DateTime? targetEndTime;
   DateTime? _backgroundTime;
   int _consecutiveActiveSeconds = 0;
   late AnimationController _shimmerController;
   // Mock opponent (later will be updated via WebSockets)
-  String opponentName = "Opponent1";
-  double opponentScore = 87.0;
+  String opponentName = "Pending...";
+  double opponentScore = 100.0;
 
   // Session code generated once on app load but can be changed
   late String sessionCode;
@@ -120,6 +121,81 @@ class _FocusHomePageState extends State<FocusHomePage>
               });
             }
             
+            // Handle timer updates from the server
+            if (data['timer_running'] != null) {
+              final bool timerShouldBeRunning = data['timer_running'] == true;
+              
+              // Update timer state if it needs to change
+              if (timerShouldBeRunning != isTimerRunning) {
+                if (timerShouldBeRunning) {
+                  // Timer should be running but isn't
+                  setState(() {
+                    isTimerRunning = true;
+                  });
+                  
+                  if (data['timer_end_time'] != null) {
+                    // Convert Python time.time() (seconds since epoch) to DateTime
+                    final double endTimeSeconds = data['timer_end_time'].toDouble();
+                    final int endTimeMilliseconds = (endTimeSeconds * 1000).toInt();
+                    final DateTime serverEndTime = DateTime.fromMillisecondsSinceEpoch(endTimeMilliseconds);
+                    
+                    // Calculate remaining time based on server's end time
+                    final remainingMillis = max(0, serverEndTime.difference(DateTime.now()).inMilliseconds);
+                    final newRemainingSeconds = (remainingMillis / 1000).ceil();
+                    
+                    setState(() {
+                      targetEndTime = serverEndTime;
+                      remainingSeconds = newRemainingSeconds;
+                    });
+                    
+                    print('Timer started from server. End time: ${serverEndTime.toIso8601String()}, remaining: $newRemainingSeconds seconds');
+                  }
+                  
+                  _startUITimer();
+                } else {
+                  // Timer should be stopped
+                  _uiTimer?.cancel();
+                  
+                  setState(() {
+                    isTimerRunning = false;
+                    
+                    // If time_remaining is provided, update the remaining seconds
+                    if (data['time_remaining'] != null) {
+                      remainingSeconds = data['time_remaining'].toInt();
+                      print('Timer stopped. Remaining: $remainingSeconds seconds');
+                    }
+                  });
+                }
+              } else if (timerShouldBeRunning) {
+                // Timer is already running but we got an update to the end time
+                if (data['timer_end_time'] != null) {
+                  // Convert Python time.time() (seconds since epoch) to DateTime
+                  final double endTimeSeconds = data['timer_end_time'].toDouble();
+                  final int endTimeMilliseconds = (endTimeSeconds * 1000).toInt();
+                  final DateTime serverEndTime = DateTime.fromMillisecondsSinceEpoch(endTimeMilliseconds);
+                  
+                  // Calculate remaining time based on server's end time
+                  final remainingMillis = max(0, serverEndTime.difference(DateTime.now()).inMilliseconds);
+                  final newRemainingSeconds = (remainingMillis / 1000).ceil();
+                  
+                  setState(() {
+                    targetEndTime = serverEndTime;
+                    remainingSeconds = newRemainingSeconds;
+                  });
+                  
+                  print('Timer end time updated: ${serverEndTime.toIso8601String()}, remaining: $newRemainingSeconds seconds');
+                }
+              } else {
+                // Timer is already stopped but we got an update to the remaining time
+                if (data['time_remaining'] != null) {
+                  setState(() {
+                    remainingSeconds = data['time_remaining'].toInt();
+                  });
+                  print('Timer remaining time updated: $remainingSeconds seconds');
+                }
+              }
+            }
+            
           } catch (e) {
             print('Error processing WebSocket message: $e');
           }
@@ -156,9 +232,40 @@ class _FocusHomePageState extends State<FocusHomePage>
   void dispose() {
   WidgetsBinding.instance.removeObserver(this);
   _uiTimer?.cancel();
+  _backgroundPenaltyTimer?.cancel();
   _shimmerController.dispose();
   _webSocketChannel?.sink.close();
   super.dispose();
+  }
+
+  // Start a background timer that periodically decrements focus score and sends updates
+  void _startBackgroundPenaltyTimer() {
+    _backgroundPenaltyTimer?.cancel();
+
+    // Decrease focus score every 2 seconds when in background
+    _backgroundPenaltyTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (!isTimerRunning) {
+        timer.cancel();
+        return;
+      }
+      
+      // Only update if we're really in background (backgroundTime is set)
+      if (_backgroundTime != null) {
+        double oldFocusPercentage = focusPercentage;
+        
+        // Decrease by 1% every 5 seconds
+        focusPercentage = (focusPercentage - 1.0).clamp(0.0, 100.0);
+        
+        // Send the update to backend without using setState
+        if (oldFocusPercentage != focusPercentage) {
+          sendJsonToWebSocket({
+            'type': 'set_score',
+            'value': focusPercentage
+          });
+          print('Background focus score updated: $focusPercentage');
+        }
+      }
+    });
   }
 
   @override
@@ -170,17 +277,22 @@ class _FocusHomePageState extends State<FocusHomePage>
         _backgroundTime ??= DateTime.now();
         _uiTimer?.cancel();
         _consecutiveActiveSeconds = 0;
+        
+        // Start background penalty timer when app goes to background
+        _startBackgroundPenaltyTimer();
+        print('App went to background, started penalty timer');
         break;
       case AppLifecycleState.resumed:
+        // Stop the background penalty timer
+        _backgroundPenaltyTimer?.cancel();
+        
         if (_backgroundTime != null) {
           final awaySeconds =
               DateTime.now().difference(_backgroundTime!).inSeconds;
           if (awaySeconds > 0) {
-            double oldFocusPercentage = focusPercentage;
-            
+            // We're already decreasing in the background, but this ensures
+            // we account for any time between the last background update and now
             setState(() {
-              focusPercentage =
-                  (focusPercentage - awaySeconds * 0.2).clamp(0.0, 100.0);
               if (targetEndTime != null) {
                 remainingSeconds =
                     max(0, targetEndTime!.difference(DateTime.now()).inSeconds);
@@ -188,14 +300,17 @@ class _FocusHomePageState extends State<FocusHomePage>
               }
             });
             
-            // If focus percentage changed due to being away, update the backend
-            if (oldFocusPercentage != focusPercentage) {
-              sendJsonToWebSocket({
-                'type': 'set_score',
-                'value': focusPercentage
-              });
-              print('Focus score updated after resuming: $focusPercentage');
-            }
+            // Update the UI with the current focus percentage
+            setState(() {
+              // No need to decrease the score again here as we've been doing it in the background
+            });
+            
+            // Always send an update when resuming to ensure synchronization
+            sendJsonToWebSocket({
+              'type': 'set_score',
+              'value': focusPercentage
+            });
+            print('Focus score synced after resuming: $focusPercentage');
           }
         }
         _backgroundTime = null;
@@ -236,7 +351,7 @@ class _FocusHomePageState extends State<FocusHomePage>
         remainingSeconds = newRemaining;
         _consecutiveActiveSeconds++;
 
-        if (_consecutiveActiveSeconds >= 5) {
+        if (_consecutiveActiveSeconds >= 2) {
           double oldFocusPercentage = focusPercentage;
           focusPercentage = (focusPercentage + 0.05).clamp(0.0, 100.0);
           
