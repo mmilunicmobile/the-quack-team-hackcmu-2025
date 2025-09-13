@@ -1,7 +1,7 @@
 import UIKit
 import Flutter
 
-@UIApplicationMain
+@main
 @objc class AppDelegate: FlutterAppDelegate {
   private var eventSink: FlutterEventSink?
 
@@ -23,11 +23,11 @@ extension AppDelegate: FlutterStreamHandler {
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
     eventSink = events
 
-    NotificationCenter.default.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailable, object: nil, queue: .main) { _ in
+      NotificationCenter.default.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main) { _ in
         self.eventSink?("locked")
     }
 
-    NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailable, object: nil, queue: .main) { _ in
+    NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: .main) { _ in
         self.eventSink?("unlocked")
     }
 
