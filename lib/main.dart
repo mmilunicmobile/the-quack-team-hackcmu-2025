@@ -52,20 +52,19 @@ class _FocusHomePageState extends State<FocusHomePage>
   WebSocketChannel? _webSocketChannel;
   String username = "User";
   double focusPercentage = 100.0;
-
   int remainingSeconds = 300;
   bool isTimerRunning = false;
   Timer? _uiTimer;
   DateTime? targetEndTime;
-
   DateTime? _backgroundTime;
   int _consecutiveActiveSeconds = 0;
-
   late AnimationController _shimmerController;
-
   // Mock opponent (later will be updated via WebSockets)
   String opponentName = "Opponent1";
   double opponentScore = 87.0;
+
+  // Session code generated once on app load but can be changed
+  late String sessionCode;
 
   @override
   void initState() {
@@ -75,6 +74,37 @@ class _FocusHomePageState extends State<FocusHomePage>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    sessionCode = _generateRandomString();
+    
+    // Auto-connect to WebSocket with the session code on app startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _connectToWebSocket(sessionCode);
+    });
+  }
+  
+  // Connect to WebSocket using the provided code
+  void _connectToWebSocket(String code) {
+    try {
+      final channel = WebSocketChannel.connect(
+        Uri.parse('$hostname/ws/$code'),
+      );
+      setState(() {
+        _webSocketChannel?.sink.close();
+        _webSocketChannel = channel;
+      });
+      print('WebSocketChannel connected to: $hostname/ws/$code');
+      
+      // Send username immediately after connection is established
+      Future.delayed(const Duration(milliseconds: 500), () {
+        sendJsonToWebSocket({
+          'type': 'set_username',
+          'value': username
+        });
+        print('Initial username sent: $username');
+      });
+    } catch (e) {
+      print('WebSocketChannel connection failed: $e');
+    }
   }
 
   @override
@@ -242,10 +272,7 @@ class _FocusHomePageState extends State<FocusHomePage>
               child: const Text('Cancel')),
           ElevatedButton(
               onPressed: () {
-                sendJsonToWebSocket({
-                  'type': 'set_username',
-                  'value': controller.text.trim()
-                });
+                // Just return the trimmed text
                 Navigator.pop(context, controller.text.trim());
               },
               child: const Text('Save')),
@@ -254,30 +281,38 @@ class _FocusHomePageState extends State<FocusHomePage>
     );
 
     if (result != null && result.isNotEmpty) {
+      // First update the username locally
       setState(() {
         username = result;
       });
+      
+      // Then send the update via WebSocket
+      sendJsonToWebSocket({
+        'type': 'set_username',
+        'value': username
+      });
+      
+      print('Username updated to: $username');
     }
   }
 
   void _showCodeDialog() {
-    final codeController = TextEditingController();
-    final randomCode = _generateRandomString();
-
+    final codeController = TextEditingController(text: sessionCode);
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Code Generator / Input'),
+        title: const Text('Session Code'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Random Code: $randomCode',
+            Text('Current Session Code: $sessionCode',
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             TextField(
               controller: codeController,
               decoration: const InputDecoration(
-                labelText: 'Enter a code',
+                labelText: 'Edit code or enter new code',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -290,23 +325,16 @@ class _FocusHomePageState extends State<FocusHomePage>
           ElevatedButton(
             onPressed: () {
               final enteredCode = codeController.text.trim();
-              print('User entered code: $enteredCode');
-              // Initialize WebSocketChannel
-              try {
-                final channel = WebSocketChannel.connect(
-                  Uri.parse('$hostname/ws/$enteredCode'),
-                );
+              if (enteredCode.isNotEmpty) {
                 setState(() {
-                  _webSocketChannel?.sink.close();
-                  _webSocketChannel = channel;
+                  sessionCode = enteredCode;
                 });
-                print('WebSocketChannel connected to: $hostname/ws/$enteredCode');
-              } catch (e) {
-                print('WebSocketChannel connection failed: $e');
+                // Connect to WebSocket with the entered code
+                _connectToWebSocket(enteredCode);
               }
               Navigator.pop(context);
             },
-            child: const Text('Submit'),
+            child: const Text('Connect'),
           ),
         ],
       ),
