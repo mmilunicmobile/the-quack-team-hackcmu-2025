@@ -2,6 +2,10 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:convert';
+// WebSocket server hostname
+const String hostname = "ws://172.26.123.7:8000"; // Change as needed
 
 void main() {
   runApp(const FocusApp());
@@ -31,6 +35,21 @@ class FocusHomePage extends StatefulWidget {
 
 class _FocusHomePageState extends State<FocusHomePage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+
+  // Send a JSON object to the WebSocket if it exists
+  void sendJsonToWebSocket(Map<String, dynamic> jsonObject) {
+    if (_webSocketChannel != null) {
+      try {
+        _webSocketChannel!.sink.add(jsonEncode(jsonObject));
+        print('Sent to WebSocket: ${jsonEncode(jsonObject)}');
+      } catch (e) {
+        print('Error sending to WebSocket: $e');
+      }
+    } else {
+      print('WebSocket is not connected.');
+    }
+  }
+  WebSocketChannel? _webSocketChannel;
   String username = "User";
   double focusPercentage = 100.0;
 
@@ -60,10 +79,11 @@ class _FocusHomePageState extends State<FocusHomePage>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _uiTimer?.cancel();
-    _shimmerController.dispose();
-    super.dispose();
+  WidgetsBinding.instance.removeObserver(this);
+  _uiTimer?.cancel();
+  _shimmerController.dispose();
+  _webSocketChannel?.sink.close();
+  super.dispose();
   }
 
   @override
@@ -221,7 +241,13 @@ class _FocusHomePageState extends State<FocusHomePage>
               onPressed: () => Navigator.pop(context, null),
               child: const Text('Cancel')),
           ElevatedButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              onPressed: () {
+                sendJsonToWebSocket({
+                  'type': 'set_username',
+                  'value': controller.text.trim()
+                });
+                Navigator.pop(context, controller.text.trim());
+              },
               child: const Text('Save')),
         ],
       ),
@@ -265,6 +291,19 @@ class _FocusHomePageState extends State<FocusHomePage>
             onPressed: () {
               final enteredCode = codeController.text.trim();
               print('User entered code: $enteredCode');
+              // Initialize WebSocketChannel
+              try {
+                final channel = WebSocketChannel.connect(
+                  Uri.parse('$hostname/ws/$enteredCode'),
+                );
+                setState(() {
+                  _webSocketChannel?.sink.close();
+                  _webSocketChannel = channel;
+                });
+                print('WebSocketChannel connected to: $hostname/ws/$enteredCode');
+              } catch (e) {
+                print('WebSocketChannel connection failed: $e');
+              }
               Navigator.pop(context);
             },
             child: const Text('Submit'),
