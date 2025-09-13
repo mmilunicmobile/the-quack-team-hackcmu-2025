@@ -57,6 +57,7 @@ class UserState:
         self.username = username
         self.score = 0
         self.profile = ""
+        self.last_ping_time = int(time.time())  # Initialize with current time
 
 class SessionItem:
     def __init__(self):
@@ -119,6 +120,8 @@ async def websocket_session(websocket: WebSocket, session_code: str):
                         current_session.timer_amount = current_session.timer_end_time - int(time.time())
                 case "set_score":
                     user_state.score = data.get("value", 0)
+                    # Update last ping time if provided, otherwise use current server time
+                    user_state.last_ping_time = data.get("last_ping_time", int(time.time()))
                 case "set_username":
                     user_state.username = data.get("value", "")
                 case "set_profile":

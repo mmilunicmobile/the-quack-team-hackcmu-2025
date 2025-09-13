@@ -35,6 +35,13 @@ class FocusHomePage extends StatefulWidget {
 
 class _FocusHomePageState extends State<FocusHomePage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  
+  // Timestamp tracking for background penalties
+  DateTime? _backgroundStartTime;
+  bool _wasTimerRunningBeforeBackground = false;
+  int _lastPingTimestamp = 0; // Timestamp of our last score update
+  int _opponentLastPingTimestamp = 0; // Timestamp of opponent's last score update
+  double _opponentRawScore = 100.0; // Opponent's raw score before time adjustment
 
   // Send a JSON object to the WebSocket if it exists
   void sendJsonToWebSocket(Map<String, dynamic> jsonObject) {
@@ -115,12 +122,40 @@ class _FocusHomePageState extends State<FocusHomePage>
               });
             }
             
-            // Update opponent score if scores are available
+            // Update opponent score and ping time if available
             if (data['scores'] != null && data['scores'].isNotEmpty) {
-              setState(() {
-                // First entry in the array is now the opponent's score (current user is excluded)
-                opponentScore = data['scores'][0].toDouble();
-              });
+              // First entry is now the opponent's score (current user is excluded)
+              final rawScore = data['scores'][0].toDouble();
+              
+              // Check if last_ping_times is provided
+              if (data['last_ping_times'] != null && data['last_ping_times'].isNotEmpty) {
+                final pingTime = data['last_ping_times'][0];
+                if (pingTime is int) {
+                  _opponentLastPingTimestamp = pingTime;
+                  _opponentRawScore = rawScore;
+                  
+                  // Calculate adjusted score based on timestamp
+                  final adjustedScore = _calculateAdjustedScore(_opponentRawScore, _opponentLastPingTimestamp);
+                  
+                  setState(() {
+                    opponentScore = adjustedScore;
+                  });
+                  
+                  print('Received opponent score: raw=$_opponentRawScore, adjusted=$opponentScore, timestamp=$_opponentLastPingTimestamp');
+                } else {
+                  setState(() {
+                    opponentScore = rawScore;
+                    _opponentRawScore = rawScore;
+                  });
+                  print('Received opponent score without valid timestamp: $rawScore');
+                }
+              } else {
+                setState(() {
+                  opponentScore = rawScore;
+                  _opponentRawScore = rawScore;
+                });
+                print('Received opponent score without timestamp: $rawScore');
+              }
             }
             
             // Handle timer updates from the server
@@ -177,12 +212,14 @@ class _FocusHomePageState extends State<FocusHomePage>
         });
         print('Initial username sent: $username');
         
-        // Also send initial focus score
+        // Also send initial focus score with timestamp
+        _lastPingTimestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         sendJsonToWebSocket({
           'type': 'set_score',
-          'value': focusPercentage
+          'value': focusPercentage,
+          'last_ping_time': _lastPingTimestamp
         });
-        print('Initial focus score sent: $focusPercentage');
+        print('Initial focus score sent: $focusPercentage, timestamp: $_lastPingTimestamp');
       });
     } catch (e) {
       print('WebSocketChannel connection failed: $e');
@@ -202,52 +239,80 @@ class _FocusHomePageState extends State<FocusHomePage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // if (!isTimerRunning) return;
+    print('App lifecycle state changed to: $state');
+    
     switch (state) {
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
+        // Record when the app goes to background
+        _backgroundStartTime = DateTime.now();
+        _wasTimerRunningBeforeBackground = isTimerRunning;
+        
+        // Cancel the UI timer
         _uiTimer?.cancel();
         _consecutiveActiveSeconds = 0;
         
-        // Start background penalty timer when app goes to background
-        _startBackgroundPenaltyTimer();
-        print('App went to background, started penalty timer');
-        break;
-      case AppLifecycleState.resumed:
-        // Stop the background penalty timer
-        _backgroundPenaltyTimer?.cancel();
-        _startUITimer();
+        print('App went to background at: ${_backgroundStartTime.toString()}');
         
-        // if (_backgroundTime != null) {
-        //   final awaySeconds =
-        //       DateTime.now().difference(_backgroundTime!).inSeconds;
-        //   if (awaySeconds > 0) {
-        //     // We're already decreasing in the background, but this ensures
-        //     // we account for any time between the last background update and now
-        //     setState(() {
-        //       if (targetEndTime != null) {
-        //         remainingSeconds =
-        //             max(0.0, targetEndTime!.difference(DateTime.now()).inMilliseconds / 1000.0);
-        //         if (remainingSeconds == 0) isTimerRunning = false;
-        //       }
-        //     });
-            
-        //     // Update the UI with the current focus percentage
-        //     setState(() {
-        //       // No need to decrease the score again here as we've been doing it in the background
-        //     });
-            
-            // Always send an update when resuming to ensure synchronization
-            // sendJsonToWebSocket({
-            //   'type': 'set_score',
-            //   'value': focusPercentage
-            // });
-            // print('Focus score synced after resuming: $focusPercentage');
-        // _backgroundTime = null;
+        // We still use the background penalty timer, but it will use timestamps
+        // This is a fallback in case the app gets some background execution time
+        _startBackgroundPenaltyTimer();
+        break;
+        
+      case AppLifecycleState.resumed:
+        print('App resumed from background');
+        
+        // Cancel any running background timer
+        _backgroundPenaltyTimer?.cancel();
+        
+        // Apply a one-time penalty for the time spent in background
+        _applyBackgroundPenalty();
+        
+        // Restart the UI timer
+        _startUITimer();
         break;
     }
+  }
+  
+  // Apply a one-time penalty for the time spent in background
+  void _applyBackgroundPenalty() {
+    // Only apply penalty if timer was running when we went to background
+    if (_backgroundStartTime != null && _wasTimerRunningBeforeBackground && isTimerRunning) {
+      // Calculate seconds spent in background
+      final secondsInBackground = DateTime.now().difference(_backgroundStartTime!).inSeconds;
+      print('App was in background for $secondsInBackground seconds');
+      
+      if (secondsInBackground <= 0) {
+        print('App was in background for 0 or negative seconds, skipping penalty');
+        return;
+      }
+      
+      // Apply penalty at the same rate (1.5 points per second)
+      final double penaltyAmount = min(1.5 * secondsInBackground, focusPercentage);
+      
+      if (penaltyAmount > 0) {
+        setState(() {
+          double oldFocusPercentage = focusPercentage;
+          focusPercentage = (focusPercentage - penaltyAmount).clamp(0.0, 100.0);
+          print('Applied background penalty: -$penaltyAmount. Old: $oldFocusPercentage, New: $focusPercentage');
+        });
+        
+        // Send the updated score to server with current timestamp
+        _lastPingTimestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        sendJsonToWebSocket({
+          'type': 'set_score',
+          'value': focusPercentage,
+          'last_ping_time': _lastPingTimestamp
+        });
+        print('Sent updated focus score after background: $focusPercentage, timestamp: $_lastPingTimestamp');
+      }
+    }
+    
+    // Reset background tracking
+    _backgroundStartTime = null;
+    _wasTimerRunningBeforeBackground = false;
   }
 
   void _startTimer() {
@@ -276,21 +341,54 @@ class _FocusHomePageState extends State<FocusHomePage>
         return;
       }
       
-      // Only update if we're really in background (backgroundTime is set)
+      // Only update if we're really in background
       double oldFocusPercentage = focusPercentage;
         
-      
       focusPercentage = (focusPercentage - 1.5).clamp(0.0, 100.0);
         
-        // Send the update to backend without using setState
+      // Send the update to backend without using setState, including timestamp
       if (oldFocusPercentage != focusPercentage) {
+          _lastPingTimestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
           sendJsonToWebSocket({
             'type': 'set_score',
-            'value': focusPercentage
+            'value': focusPercentage,
+            'last_ping_time': _lastPingTimestamp
           });
-          print('Background focus score updated: $focusPercentage');
+          print('Background focus score updated: $focusPercentage, timestamp: $_lastPingTimestamp');
       }
     });
+  }
+  
+  // Calculate the adjusted score based on timestamp
+  double _calculateAdjustedScore(double rawScore, int lastPingTimestamp) {
+    // If timer isn't running, no need to adjust score
+    if (!isTimerRunning) {
+      return rawScore;
+    }
+    
+    // Calculate seconds elapsed since last ping
+    final currentTimestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final secondsElapsed = currentTimestamp - lastPingTimestamp;
+    
+    // Don't adjust if last ping was very recent (within 1 second)
+    if (secondsElapsed <= 1) {
+      return rawScore;
+    }
+    
+    // Add a small fudge factor to account for network delay (0.25 seconds)
+    final adjustedSecondsElapsed = secondsElapsed - 0.25;
+    
+    if (adjustedSecondsElapsed <= 0) {
+      return rawScore;
+    }
+    
+    // Apply the same penalty rate as the original background timer (1.5 points per second)
+    final penalty = 1.5 * adjustedSecondsElapsed;
+    final adjustedScore = (rawScore - penalty).clamp(0.0, 100.0);
+    
+    print('Adjusted opponent score: $rawScore -> $adjustedScore (${adjustedSecondsElapsed.toStringAsFixed(1)}s elapsed)');
+    
+    return adjustedScore;
   }
 
   void _startUITimer() {
@@ -317,9 +415,14 @@ class _FocusHomePageState extends State<FocusHomePage>
 
       setState(() {
         if (isTimerRunning) {
-        _consecutiveActiveSeconds += 0.1;
+          _consecutiveActiveSeconds += 0.1;
+          
+          // Periodically adjust opponent's score based on their last ping time
+          // Only update the UI, not the stored raw score
+          if (_opponentLastPingTimestamp > 0) {
+            opponentScore = _calculateAdjustedScore(_opponentRawScore, _opponentLastPingTimestamp);
+          }
         }
-        
         
         visualTimerDisplayTime = newRemaining;
 
@@ -327,13 +430,15 @@ class _FocusHomePageState extends State<FocusHomePage>
           double oldFocusPercentage = focusPercentage;
           focusPercentage = (focusPercentage + 0.05).clamp(0.0, 100.0);
           
-          // If focus percentage changed, send update to backend
+          // If focus percentage changed, send update to backend with timestamp
           if (oldFocusPercentage != focusPercentage) {
+            _lastPingTimestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
             sendJsonToWebSocket({
               'type': 'set_score',
-              'value': focusPercentage
+              'value': focusPercentage,
+              'last_ping_time': _lastPingTimestamp
             });
-            print('Focus score updated to: $focusPercentage');
+            print('Focus score updated to: $focusPercentage, timestamp: $_lastPingTimestamp');
           }
           
           _consecutiveActiveSeconds = 0;
